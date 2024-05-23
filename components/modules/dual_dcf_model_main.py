@@ -1,20 +1,14 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
+# In[1]:
 
 
 ### Stock Valuation Program 
 ### Goal: create python algorithm to query financials and historical data to formulate multiple valuation models
 
 
-# In[6]:
-
-
-get_ipython().system('pip install sec-api yfinance')
-
-
-# In[1]:
+# In[2]:
 
 
 import pandas as pd
@@ -27,14 +21,14 @@ import time
 import random
 
 
-# In[7]:
+# In[3]:
 
 
 from sec_api import XbrlApi
 import yfinance as yf
 
 
-# In[8]:
+# In[4]:
 
 
 headers = {'User-Agent': "ericbstratford@gmail.com"}
@@ -51,7 +45,7 @@ tickers_cik.set_index("ticker",inplace=True)
 # assets_timeserie = assets_timeserie.sort_values("end")
 
 
-# In[9]:
+# In[5]:
 
 
 def get_tags(ticker):
@@ -64,7 +58,7 @@ def get_tags(ticker):
 # get_tags("PEP")
 
 
-# In[10]:
+# In[6]:
 
 
 def get_fact(ticker, tag):
@@ -93,21 +87,22 @@ def get_market_val(ticker, tag):
     return out
 
 
-# In[11]:
+# In[7]:
 
 
-yf.Ticker("VZ").info.keys()
+# yf.Ticker("AAPL").info.keys()
 # yf.Ticker("SPY").history(period='5y')
 # yf.Ticker("PEP").get_cash_flow()
 
 
-# In[12]:
+# In[8]:
 
 
-get_market_val("META", "pegRatio")
+# get_market_val("QQQ", "fiveYearAverageReturn")
+# get_market_val("SPY", "fiveYearAverageReturn")
 
 
-# In[13]:
+# In[9]:
 
 
 def discounted_cash_flow(ticker):
@@ -273,7 +268,7 @@ def discounted_cash_flow(ticker):
 # discounted_cash_flow("AAPL")
 
 
-# In[14]:
+# In[10]:
 
 
 # ticker = "GE"
@@ -282,7 +277,7 @@ def discounted_cash_flow(ticker):
 # print(get_market_val(ticker, "industryKey"))
 
 
-# In[15]:
+# In[11]:
 
 
 # Industry List. Manually generated to avoid repetetive webscraping calls
@@ -377,7 +372,7 @@ sector_industry_tickers = {
 # In[16]:
 
 
-def portfolio_dist(stocks_list, preference):
+def portfolio_dist(stocks_list, investment, preference):
     preferences = {'conservative': 1, 'moderate': 2, 'aggressive': 3}
     preference_level = preferences.get(preference.lower(), 2)
     
@@ -387,82 +382,96 @@ def portfolio_dist(stocks_list, preference):
     
     for ticker in stocks_list:
         rec = None
-        sector_key = get_market_val(ticker, "sectorKey")
-        industry_key = get_market_val(ticker, "industryKey")
-        pe = get_market_val(ticker, "forwardPE")
-        peg_ratio = get_market_val(ticker, "pegRatio")
+        weight = 0
         
-        
-        # Get list of comparables
-        if industry_key in sector_industry_tickers.get(sector_key, {}):
-            comparables = sector_industry_tickers[sector_key][industry_key]
-        else:
-            comparables = random.sample(
-                [tick for industry in sector_industry_tickers.get(sector_key, {}).values() for tick in industry], 
-                10
-            )
-
-        # Calculate comparable PE ratio
-        comparable_pe_total = 0
-        comp_count = 0
-        for comp in comparables:
-            try:
-                comparable_pe_total += get_market_val(comp, "forwardPE")
-                comp_count += 1
-            except:
-                continue
-        comparable_pe_avg = comparable_pe_total/comp_count
-        pe_comp_ratio = pe/comparable_pe_avg
-        
+        # ETF handling
         try:
-            ivps, current_price = discounted_cash_flow(ticker)
-            
-            # Use DCF for initial recommendation
-            if ivps > current_price * 1.1:
-                rec = "Strong Buy"
-                weight = 5
-            elif ivps > current_price * 1.03:
-                rec = "Buy"
-                weight = 4
-            elif ivps < current_price * 0.9:
-                rec = "Strong Sell"
-                weight = -5
-            elif ivps < current_price * 0.97:
-                rec = "Sell"
-                weight = -4
-            else:
-                rec = "Hold"
-                weight = 1
-                
-        except:
-            # Comparable PEG ratios in absense of DCF
+            sector_key = get_market_val(ticker, "sectorKey")
+            industry_key = get_market_val(ticker, "industryKey")
+            pe = get_market_val(ticker, "forwardPE")
             peg_ratio = get_market_val(ticker, "pegRatio")
-            comparable_peg_total = 0
+        
+            # Get list of comparables
+            if industry_key in sector_industry_tickers.get(sector_key, {}):
+                comparables = sector_industry_tickers[sector_key][industry_key]
+            else:
+                comparables = random.sample(
+                    [tick for industry in sector_industry_tickers.get(sector_key, {}).values() for tick in industry], 
+                    10
+                )
+
+            # Calculate comparable PE ratio
+            comparable_pe_total = 0
             comp_count = 0
             for comp in comparables:
                 try:
-                    comparable_peg_total += get_market_val(comp, "pegRatio")
+                    comparable_pe_total += get_market_val(comp, "forwardPE")
                     comp_count += 1
                 except:
                     continue
-            comparable_peg_avg = comparable_peg_total/comp_count
+            comparable_pe_avg = comparable_pe_total/comp_count
+            pe_comp_ratio = pe/comparable_pe_avg
+
+            try:
+                ivps, current_price = discounted_cash_flow(ticker)
+
+                # Use DCF for initial recommendation
+                if ivps > current_price * 1.1:
+                    weight += 5
+                elif ivps > current_price * 1.03:
+                    weight += 4
+                elif ivps < current_price * 0.9:
+                    weight += -5
+                elif ivps < current_price * 0.97:
+                    weight += -4
+                else:
+                    rec = "Hold"
+                    weight += 1
+
+            except:
+                # Comparable PEG ratios in absense of DCF
+                peg_ratio = get_market_val(ticker, "pegRatio")
+                comparable_peg_total = 0
+                comp_count = 0
+                for comp in comparables:
+                    try:
+                        comparable_peg_total += get_market_val(comp, "pegRatio")
+                        comp_count += 1
+                    except:
+                        continue
+                comparable_peg_avg = comparable_peg_total/comp_count
+
+                # Use PEG ratio to comparable industry average
+                if peg_ratio > comparable_peg_avg * 1.2:
+                    weight += -3
+                elif peg_ratio > comparable_peg_avg * 1.03:
+                    weight += -2
+                elif peg_ratio < comparable_peg_avg * 0.8:
+                    weight += 3
+                elif peg_ratio < comparable_peg_avg * 0.97:
+                    weight += 2
+                else:
+                    weight += 1
+                    
+        except: # If ETF
+            # Use SPY as baseline
+            spy_ar = get_market_val("SPY", "fiveYearAverageReturn")
+            avg_returns = get_market_val(ticker, "fiveYearAverageReturn")
             
-            # Use PEG ratio to comparable industry average
-            if peg_ratio > comparable_peg_avg * 1.2:
-                rec = "Strong Sell"
-                weight = -3
-            elif peg_ratio > comparable_peg_avg * 1.03:
-                rec = "Sell"
-                weight = -2
-            elif peg_ratio < comparable_peg_avg * 0.8:
-                rec = "Strong Buy"
-                weight = 3
-            elif peg_ratio < comparable_peg_avg * 0.97:
-                rec = "Buy"
-                weight = 2
+            trailing_pe = get_market_val(ticker, "trailingPE")
+            spy_pe = get_market_val(ticker, "trailingPE")
+            
+            pe_comp_ratio = trailing_pe / spy_pe
+            if avg_returns > spy_ar * 1.2:
+                weight += 4
+            elif avg_returns > spy_ar * 1.05:
+                weight += 2
+            elif avg_returns < spy_ar * 0.95:
+                weight += -2
+            elif avg_returns < spy_ar * 0.8:
+                weight += -4
             else:
-                rec = "Hold"
-                weight = 1
+                weight += 1
                 
         # Use comparable PE ratios and preferences to adjust weights
         if preference_level == 1:  # Conservative
@@ -477,18 +486,32 @@ def portfolio_dist(stocks_list, preference):
                 weight -= 1
 
         weight = max(0, weight)
+        if weight > 0:
+            rec = "Buy"
+        elif weight > 2:
+            rec = "Strong Buy"
+        elif weight < 0:
+            rec = "Sell"
+        elif weight < -2:
+            rec = "Strong Sell"
+        else:
+            rec = "Hold"
         stock_recs[ticker] = rec
         stock_weights[ticker] = weight
         total_weight += abs(weight)
         print(ticker, rec, weight)
         
     for ticker in stock_weights:
-        stock_weights[ticker] = (stock_weights[ticker] / total_weight)
+        stock_weights[ticker] = (stock_weights[ticker] / total_weight) * investment
     
     return stock_recs, stock_weights
             
+
+"""
+TESTING VALUATION BELOW
+"""
     
-# stock_recs, stock_weights = portfolio_dist(['X', 'AAPL', 'META', 'MA', 'BA'], "moderate")
+# stock_recs, stock_weights = portfolio_dist(['X', 'AAPL', 'META', 'QQQ', 'BA'], 10000, "aggressive")
 
 
 # In[17]:
@@ -496,10 +519,4 @@ def portfolio_dist(stocks_list, preference):
 
 # stock_recs
 # stock_weights
-
-
-# In[ ]:
-
-
-
 
