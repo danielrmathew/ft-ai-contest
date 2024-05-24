@@ -4,16 +4,6 @@
 
 This is our 2024 Franklin Templeton University AI Competition entry.
 
-📂 Project-Root
-├── 📁 articles
-├── 📁 components
-│ ├── 📁 modules
-│ └── 📁 notebooks
-├── 📁 reference
-├── 📄 README.md
-├── 📄 full_pipeline.ipynb
-└── 📄 requirements.txt
-
 ## System Configuration
 
 Run the following command in your terminal to install the necessary packages for this project:
