@@ -372,7 +372,7 @@ sector_industry_tickers = {
 # In[16]:
 
 
-def portfolio_dist(stocks_list, investment, preference):
+def portfolio_dist(stocks_list, preference):
     preferences = {'conservative': 1, 'moderate': 2, 'aggressive': 3}
     preference_level = preferences.get(preference.lower(), 2)
     
@@ -502,7 +502,7 @@ def portfolio_dist(stocks_list, investment, preference):
         print(ticker, rec, weight)
         
     for ticker in stock_weights:
-        stock_weights[ticker] = (stock_weights[ticker] / total_weight) * investment
+        stock_weights[ticker] = (stock_weights[ticker] / total_weight)
     
     return stock_recs, stock_weights
             
