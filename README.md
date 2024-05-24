@@ -15,6 +15,7 @@ The `reference` folder contains other work and testing in previous files.
 ## System Configuration
 
 Run the following command in your terminal to install the necessary packages for this project:
+
 ```pip install -r requirements.txt```
 
 ## Run model
