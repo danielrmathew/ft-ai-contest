@@ -36,6 +36,43 @@ from bs4 import BeautifulSoup
 import os
 
 
+# In[5]:
+
+
+def get_llm(selected_model):
+    """
+    Initializes and stores LLM on memory
+    selected_model: str, model name to load
+    return: model variable
+    """
+    
+    SYSTEM_PROMPT = """You are an AI assistant that answers questions in a friendly manner, based on the given source documents. Here are some rules you always follow:
+    - Generate human readable output, avoid creating output with gibberish text.
+    - Generate only the requested output, don't include any other language before or after the requested output.
+    - Never say thank you, that you are happy to help, that you are an AI agent, etc. Just answer directly.
+    - Generate professional language typically used in business documents in North America.
+    - Never generate offensive or foul language.
+    """
+
+    query_wrapper_prompt = PromptTemplate(
+        "[INST]<<SYS>>\n" + SYSTEM_PROMPT + "<</SYS>>\n\n{query_str}[/INST] "
+    )
+
+    llm = HuggingFaceLLM(
+        context_window=4096,
+        max_new_tokens=2048,
+        generate_kwargs={"temperature": 0.1, "do_sample": True},
+        query_wrapper_prompt=query_wrapper_prompt,
+        tokenizer_name=selected_model,
+        model_name=selected_model,
+        device_map="auto",
+        # change these settings below depending on your GPU
+        model_kwargs={"torch_dtype": torch.float16, "load_in_8bit": True},
+    )
+        
+    return llm
+
+
 # In[ ]:
 
 
@@ -176,43 +213,6 @@ def create_documents(start_date, num_days):
 # In[6]:
 
 
-def get_llm(selected_model):
-    """
-    Initializes and stores LLM on memory
-    selected_model: str, model name to load
-    return: model variable
-    """
-    
-    SYSTEM_PROMPT = """You are an AI assistant that answers questions in a friendly manner, based on the given source documents. Here are some rules you always follow:
-    - Generate human readable output, avoid creating output with gibberish text.
-    - Generate only the requested output, don't include any other language before or after the requested output.
-    - Never say thank you, that you are happy to help, that you are an AI agent, etc. Just answer directly.
-    - Generate professional language typically used in business documents in North America.
-    - Never generate offensive or foul language.
-    """
-
-    query_wrapper_prompt = PromptTemplate(
-        "[INST]<<SYS>>\n" + SYSTEM_PROMPT + "<</SYS>>\n\n{query_str}[/INST] "
-    )
-
-    llm = HuggingFaceLLM(
-        context_window=4096,
-        max_new_tokens=2048,
-        generate_kwargs={"temperature": 0.1, "do_sample": True},
-        query_wrapper_prompt=query_wrapper_prompt,
-        tokenizer_name=selected_model,
-        model_name=selected_model,
-        device_map="auto",
-        # change these settings below depending on your GPU
-        model_kwargs={"torch_dtype": torch.float16, "load_in_8bit": True},
-    )
-        
-    return llm
-
-
-# In[7]:
-
-
 def get_query_engine(llm):
     """
     Creates the necessary components to run a RAG pipeline
@@ -225,14 +225,14 @@ def get_query_engine(llm):
     )
     embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
     
-    yf_documents = SimpleDirectoryReader(input_dir="../../articles").load_data()
+    yf_documents = SimpleDirectoryReader(input_dir="new-articles").load_data() # meant for full_pipeline.ipynb, so in right directory
     yf_index = VectorStoreIndex.from_documents(yf_documents, embed_model=embed_model)
     yf_query_engine = yf_index.as_query_engine(llm=llm)
     
     return yf_documents, yf_index, yf_query_engine
 
 
-# In[8]:
+# In[45]:
 
 
 def get_stocks(query_engine, user_prefs):
@@ -243,49 +243,41 @@ def get_stocks(query_engine, user_prefs):
     return: list, set of stocks matching user preferences returned from LLM based on articles 
     """
     
-    def get_prompt(user_prefs):
-        """
-        Creates a prompt specific to user preferences
-        user_prefs: dict, has keys "num_stocks", "risk", "industries", "return_goals", contains information about user preferences
-        return: str, prompt to query the llm with 
-        """
-        start_prompt = ("Gather stocks and ETFs that are mentioned across the articles the most in a positive sentiment."
-             f" Return a list of {user_prefs['num_stocks']} these stocks or ETFs. Collect them so that no more than half "
-                "are in the same industry for diversification purposes. Make sure you don't repeat any stocks. ")
-        risk_averse = ("This list should be tailored to a very risk averse investor who "
-            "is more focused on stability instead of rapid growth. This list should include large market cap stocks "
-            "with good fundamentals and a history of good performance. ")
-        risk_neutral = ""
-        risk_tolerant = ("This list should also be tailored to a very risk tolerant investor who "
-            "is more focused on rapid growth instead of stability. This list should include growth stocks with high expected returns " 
-            "and the potential for greater risk. ")
-        industries_prompt = f"Include multiple stocks with a strong focus on the following industry or industries: {user_prefs['industries']}. "
-        end_prompt = ("Create this list so that the stocks can be put together to make a diversified portfolio. " 
-                "List the stock name and stock ticker in parentheses. Only include in your output the stock name and ticker. " 
-                "Do not include any other recommendations. Do not include any unnecessary output or rationale.")
-
-        prompt_dict = {
-            "risk_averse": risk_averse, 
-            "risk_neutral": risk_neutral,
-            "risk_tolerant": risk_tolerant
-        }
-        prompt = None
-
-        if user_prefs["risk"] == "conservative":
-            prompt = start_prompt + prompt_dict["risk_averse"]
-        elif user_prefs["risk"] == "aggressive":
-            prompt = start_prompt + prompt_dict["risk_tolerant"]
-        else:
-            prompt = start_prompt + prompt_dict["risk_neutral"]
-
-        if user_prefs['industries']:
-            prompt += industries_prompt
-
-        prompt += end_prompt
-
-        return prompt
+    start_prompt = ("Gather the financial securities that are mentioned across the articles the most in a positive sentiment."
+     f" The securities gathered can be stocks or ETFs. Return a list of {user_prefs['num_stocks']} securities in which no more than"
+     " half of the securities are from the same industry. ")
+    risk_averse = ("This list of securities should be tailored to a very risk averse investor who "
+        "is more focused on stability instead of rapid growth. ")
+    risk_neutral = ""
+    risk_tolerant = ("This list of securities should also be tailored to a very risk tolerant investor who "
+        "is more focused on rapid growth instead of stability. This list should include growth stocks with high expected returns " 
+        "and the potential for greater risk. ")
+    industries_prompt = f"Include multiple stocks with a strong focus on the following industry or industries: {user_prefs['industries']}. "
+    end_prompt = ("Create this list so that they can be put together to make a diversified portfolio. " 
+        "List the stock name, stock ticker in parentheses, and the industry associated with it " 
+        "and double check that a majority of the industries aren't the same.")
     
-    prompt = get_prompt(user_prefs)
+    prompt_dict = {
+        "risk_averse": risk_averse, 
+        "risk_neutral": risk_neutral,
+        "risk_tolerant": risk_tolerant
+    }
+    prompt = None
+    
+    if user_prefs["risk"] == "conservative":
+        prompt = start_prompt + prompt_dict["risk_averse"]
+    elif user_prefs["risk"] == "aggressive":
+        prompt = start_prompt + prompt_dict["risk_tolerant"]
+    else:
+        prompt = start_prompt + prompt_dict["risk_neutral"]
+        
+    if user_prefs['industries']:
+        prompt += industries_prompt
+        
+    prompt += end_prompt
+        
+    
+    print(prompt)
     
     VALID = False
     attempts = 0
@@ -294,7 +286,6 @@ def get_stocks(query_engine, user_prefs):
         attempts += 1
         print(attempts)
         response = query_engine.query(prompt)
-        response.print_response_stream()
     
         pattern = r'\(([A-Za-z]+)\)'
         stocks = re.findall(pattern, response.response)
@@ -311,7 +302,7 @@ def get_stocks(query_engine, user_prefs):
     return stocks
 
 
-# In[ ]:
+# In[41]:
 
 
 risk_options = ["conservative", "moderate", "aggressive"]
@@ -325,32 +316,32 @@ user_prefs = {
 }
 
 
-# In[11]:
+# In[42]:
 
 
 LLAMA2_7B_CHAT = "meta-llama/Llama-2-7b-chat-hf"
 selected_model = LLAMA2_7B_CHAT
 
 
-# In[12]:
+# In[ ]:
 
 
 # create_documents("2024-05-20", 3)
 
 
-# In[13]:
+# In[10]:
 
 
 # llm = get_llm(selected_model)
 
 
-# In[14]:
+# In[11]:
 
 
 # docs, index, query_engine = get_query_engine(llm)
 
 
-# In[ ]:
+# In[53]:
 
 
 # example user preferences
